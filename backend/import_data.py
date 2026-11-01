@@ -1,23 +1,25 @@
 import pandas as pd
 from database import SessionLocal
 import models
-import math
 
 def import_inventory():
     db = SessionLocal()
     try:
         print("1. Saamaan_Purchase.xlsx se data import ho raha hai...")
-        # read_excel mein sheet_name=None karne se saari sheets dictionary mein aa jati hain
         purchase_data = pd.read_excel("Saamaan_Purchase.xlsx", sheet_name=None)
         
         for sheet_name, df in purchase_data.items():
-            # 'Total Investment' wali sheet skip karni hai kyunki usmein item list nahi hai
             if sheet_name == 'Total Investment':
                 continue
                 
             print(f"   -> Processing Vendor/Sheet: {sheet_name}")
+            
+            # --- FIX: Excel ke merged cells ko theek karne ke liye ---
+            if 'Company' in df.columns:
+                df['Company'] = df['Company'].ffill()
+            # ---------------------------------------------------------
+
             for index, row in df.iterrows():
-                # Agar Product ka naam nahi hai toh skip kar do
                 if pd.isna(row.get('Product')):
                     continue
                     
@@ -27,7 +29,6 @@ def import_inventory():
                 cost_price = float(row['Total Price per piece']) if pd.notna(row.get('Total Price per piece')) else 0.0
                 selling_price = float(row['MRP per piece']) if pd.notna(row.get('MRP per piece')) else 0.0
                 
-                # Check karo ki item DB mein pehle se hai ya nahi
                 existing_product = db.query(models.Product).filter(
                     models.Product.item_name == item_name
                 ).first()
@@ -36,7 +37,7 @@ def import_inventory():
                     new_product = models.Product(
                         company_name=company_name,
                         item_name=item_name,
-                        category=sheet_name, # Vendor ka naam hi category ban jayega (jaise 'Chacha Ji')
+                        category=sheet_name,
                         cost_price=cost_price,
                         selling_price=selling_price,
                         current_stock=quantity,
@@ -68,13 +69,11 @@ def import_inventory():
                 ).first()
 
                 if product:
-                    # Stock minus karo
                     if product.current_stock >= qty_sold:
                         product.current_stock -= qty_sold
                     else:
-                        product.current_stock = 0 # Agar stock negative ja raha ho toh 0 set kar do
+                        product.current_stock = 0
                     
-                    # Sale ki entry banao
                     new_sale = models.Sale(
                         product_id=product.id,
                         quantity_sold=qty_sold,
