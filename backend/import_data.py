@@ -1,6 +1,7 @@
 import pandas as pd
 from database import SessionLocal
 import models
+from datetime import datetime
 
 def import_inventory():
     db = SessionLocal()
@@ -64,6 +65,16 @@ def import_inventory():
                 sold_price = float(row['Total Sale in Ruppees ']) if pd.notna(row.get('Total Sale in Ruppees ')) else 0.0
                 sold_by_person = str(row['Sale By']) if pd.notna(row.get('Sale By')) else "Unknown"
 
+                # --- FIX: Date import ---
+                sale_date = None
+                if 'Date' in df.columns and pd.notna(row.get('Date')):
+                    try:
+                        # Pandas se Excel ki date ko Python date me convert karna
+                        sale_date = pd.to_datetime(row['Date']).to_pydatetime()
+                    except Exception as e:
+                        pass
+                # ------------------------
+
                 product = db.query(models.Product).filter(
                     models.Product.item_name == sold_item_name
                 ).first()
@@ -74,12 +85,16 @@ def import_inventory():
                     else:
                         product.current_stock = 0
                     
+                    # Nayi sale entry banate waqt Date bhi pass karni hai
                     new_sale = models.Sale(
                         product_id=product.id,
                         quantity_sold=qty_sold,
                         sold_price=sold_price,
                         sold_by=sold_by_person
                     )
+                    if sale_date:
+                        new_sale.sale_date = sale_date # Yahan date DB me jaayegi
+                        
                     db.add(new_sale)
         
         db.commit()

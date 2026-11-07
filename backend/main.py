@@ -74,3 +74,26 @@ def make_sale(sale: schemas.SaleCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_sale)
     return db_sale
+
+@app.get("/sales/", response_model=List[schemas.Sale], tags=["Sales"])
+def get_sales_history(limit: int = 50, db: Session = Depends(get_db)):
+    """हाल ही में हुई सेल की हिस्ट्री देखने के लिए"""
+    return db.query(models.Sale).order_by(models.Sale.sale_date.desc()).limit(limit).all()
+
+@app.delete("/sales/{sale_id}", tags=["Sales"])
+def delete_sale(sale_id: int, db: Session = Depends(get_db)):
+    """गलत सेल को डिलीट करने और स्टॉक वापस जोड़ने के लिए"""
+    sale = db.query(models.Sale).filter(models.Sale.id == sale_id).first()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    
+    # 1. जो सामान बिका था, उसका स्टॉक वापस बढ़ाएं
+    product = db.query(models.Product).filter(models.Product.id == sale.product_id).first()
+    if product:
+        product.current_stock += sale.quantity_sold
+        
+    # 2. सेल की रिकॉर्डिंग डिलीट करें
+    db.delete(sale)
+    db.commit()
+    
+    return {"message": f"Sale deleted successfully. {sale.quantity_sold} items added back to stock."}
